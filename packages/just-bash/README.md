@@ -527,6 +527,23 @@ await env.exec('sqlite3 data.db "SELECT * FROM users"');
 
 **Note:** SQLite is not available in browser environments. Queries run in a worker thread with a configurable timeout (30 seconds in the default `normal` profile and 5 seconds in the opt-in `hardened` profile) to prevent runaway queries from blocking execution.
 
+## Parsing without execution
+
+Import `just-bash/parser` to inspect shell syntax without loading the interpreter,
+commands, network adapters or Node.js initialization. It supports ESM and CommonJS
+and bundles for browsers without Node.js shims.
+
+```typescript
+import { parse, type ScriptNode } from "just-bash/parser";
+
+const script: ScriptNode = parse("echo hello | grep hello");
+```
+
+The subpath also exports `ParseException`, the `ParseError` and `LexerOptions`
+types, and the `CommandNode`, `SimpleCommandNode`, `StatementNode`, `PipelineNode`,
+`WordNode` and `WordPart` AST types. Parsing uses the same limits as `Bash` and does
+not execute the script.
+
 ## AST Transform Plugins
 
 Parse bash scripts into an AST, transform them, and serialize back to bash. Good for instrumenting scripts (e.g., capturing per-command stdout/stderr) or extracting metadata before execution.
