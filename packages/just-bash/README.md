@@ -539,10 +539,11 @@ import { parse, type ScriptNode } from "just-bash/parser";
 const script: ScriptNode = parse("echo hello | grep hello");
 ```
 
-The subpath also exports `ParseException`, the `ParseError` and `LexerOptions`
-types, and the `CommandNode`, `SimpleCommandNode`, `StatementNode`, `PipelineNode`,
-`WordNode` and `WordPart` AST types. Parsing uses the same limits as `Bash` and does
-not execute the script.
+The subpath also exports the existing `ParseException`, `LexerError` and
+`ArithmeticError` classes, the `ParseError` and `LexerOptions` types, and the
+`CommandNode`, `SimpleCommandNode`, `StatementNode`, `PipelineNode`, `WordNode`
+and `WordPart` AST types. Invalid syntax can throw any of these error classes.
+Parsing uses the same limits as `Bash` and does not execute the script.
 
 ## AST Transform Plugins
 

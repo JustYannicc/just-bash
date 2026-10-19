@@ -41,6 +41,12 @@ const exerciseParser = `
     ['echo', 'cat'],
   );
   assert.throws(() => parse('if true; then'), ParseException);
+  assert.throws(() => parse("echo 'unterminated"), LexerError);
+  assert.throws(
+    () => parse('cat <<EOF\\n1234\\nEOF', { maxHeredocSize: 3 }),
+    LexerError,
+  );
+  assert.throws(() => parse('echo $((1.2))'), ArithmeticError);
 `;
 
 describe("published parser subpath", () => {
@@ -51,9 +57,9 @@ describe("published parser subpath", () => {
     const imports =
       kind === "module"
         ? `import assert from 'node:assert/strict';
-           import { parse, ParseException } from 'just-bash/parser';`
+           import { parse, ParseException, LexerError, ArithmeticError } from 'just-bash/parser';`
         : `const assert = require('node:assert/strict');
-           const { parse, ParseException } = require('just-bash/parser');`;
+           const { parse, ParseException, LexerError, ArithmeticError } = require('just-bash/parser');`;
     const result = await execFileAsync(
       process.execPath,
       [`--input-type=${kind}`, "-e", imports + exerciseParser],
@@ -66,7 +72,7 @@ describe("published parser subpath", () => {
   it("bundles and parses without Node globals or external modules", async () => {
     const result = await build({
       stdin: {
-        contents: `export { parse, ParseException } from 'just-bash/parser';`,
+        contents: `export { parse, ParseException, LexerError, ArithmeticError } from 'just-bash/parser';`,
         resolveDir: consumer,
       },
       bundle: true,
@@ -82,6 +88,17 @@ describe("published parser subpath", () => {
     const commands = runInNewContext(
       `
       ${result.outputFiles[0].text}
+      const cases = [
+        ["echo 'unterminated", parser.LexerError],
+        ['cat <<EOF\\n1234\\nEOF', parser.LexerError, { maxHeredocSize: 3 }],
+        ['echo $((1.2))', parser.ArithmeticError],
+        ['if true; then', parser.ParseException],
+      ];
+      for (const [input, ErrorClass, options] of cases) {
+        let thrown;
+        try { parser.parse(input, options); } catch (error) { thrown = error; }
+        if (!(thrown instanceof ErrorClass)) throw new Error('Wrong parser error');
+      }
       parser.parse('echo hello | cat').statements[0].pipelines[0].commands
         .map(command => command.name.parts[0].value).join(',');
     `,
@@ -115,7 +132,7 @@ describe("published parser subpath", () => {
     const entry = join(consumer, `consumer.${extension}`);
     await writeFile(
       entry,
-      `import { parse, ParseException, type ParseError, type LexerOptions,
+      `import { parse, ParseException, LexerError, ArithmeticError, type ParseError, type LexerOptions,
         type ScriptNode, type CommandNode, type SimpleCommandNode,
         type StatementNode, type PipelineNode, type WordNode, type WordPart,
       } from 'just-bash/parser';
@@ -135,7 +152,9 @@ describe("published parser subpath", () => {
       const invalid: number = script;
       // @ts-expect-error lexer options must retain their declared type
       parse('echo hello', { maxHeredocSize: '100' });
-      void error; void invalid;`,
+      const lexerError: LexerError = new LexerError('invalid', 1, 1);
+      const arithmeticError: ArithmeticError = new ArithmeticError('invalid');
+      void error; void invalid; void lexerError; void arithmeticError;`,
     );
     await execFileAsync(process.execPath, [
       resolve(packageRoot, "node_modules/typescript/bin/tsc"),
