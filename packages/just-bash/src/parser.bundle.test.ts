@@ -51,11 +51,14 @@ const exerciseParser = `
     LexerError,
   );
   assert.throws(() => parse('echo $((1.2))'), ArithmeticError);
-  assert.throws(
-    () => parse('#' + 'x'.repeat(1_000_000)),
-    error => error instanceof ParseException &&
-      error.message === 'Parse error at 1:1: Input too large: 1000001 bytes exceeds limit of 1000000',
-  );
+  assert.doesNotThrow(() => parse('#' + 'é'.repeat(999_999)));
+  for (const body of ['x'.repeat(1_000_000), 'é'.repeat(1_000_000), '😀'.repeat(500_000)]) {
+    assert.throws(
+      () => parse('#' + body),
+      error => error instanceof ParseException &&
+        error.message === 'Parse error at 1:1: Input too large: 1000001 UTF-16 code units exceed limit of 1000000',
+    );
+  }
 `;
 
 describe("published parser subpath", () => {
@@ -132,9 +135,9 @@ describe("published parser subpath", () => {
         if (!(thrown instanceof ErrorClass)) throw new Error('Wrong parser error');
       }
       let oversized;
-      try { parser.parse('#' + 'x'.repeat(1_000_000)); } catch (error) { oversized = error; }
+      try { parser.parse('#' + 'é'.repeat(1_000_000)); } catch (error) { oversized = error; }
       if (!(oversized instanceof parser.ParseException) ||
-          oversized.message !== 'Parse error at 1:1: Input too large: 1000001 bytes exceeds limit of 1000000') {
+          oversized.message !== 'Parse error at 1:1: Input too large: 1000001 UTF-16 code units exceed limit of 1000000') {
         throw new Error('Missing parser input limit');
       }
       parser.parse('echo hello | cat').statements[0].pipelines[0].commands
