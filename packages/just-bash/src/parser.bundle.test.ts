@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { runInNewContext } from "node:vm";
 import { build } from "esbuild";
@@ -34,6 +35,9 @@ afterAll(async () => {
 });
 
 const exerciseParser = `
+  for (const ErrorClass of [ParseException, LexerError, ArithmeticError]) {
+    assert.equal(typeof ErrorClass, 'function');
+  }
   const ast = parse('echo hello | cat');
   assert.equal(ast.type, 'Script');
   assert.deepEqual(
@@ -47,9 +51,37 @@ const exerciseParser = `
     LexerError,
   );
   assert.throws(() => parse('echo $((1.2))'), ArithmeticError);
+  assert.throws(
+    () => parse('#' + 'x'.repeat(1_000_000)),
+    error => error instanceof ParseException &&
+      error.message === 'Parse error at 1:1: Input too large: 1000001 bytes exceeds limit of 1000000',
+  );
 `;
 
 describe("published parser subpath", () => {
+  it.each([
+    "esm",
+    "cjs",
+  ])("exports matching errors from the root %s bundle", async (kind) => {
+    const entry = resolve(
+      packageRoot,
+      kind === "esm" ? "dist/bundle/index.js" : "dist/bundle/index.cjs",
+    );
+    const imports =
+      kind === "esm"
+        ? `import assert from 'node:assert/strict';
+           const { parse, ParseException, LexerError, ArithmeticError } = await import(${JSON.stringify(pathToFileURL(entry).href)});`
+        : `const assert = require('node:assert/strict');
+           const { parse, ParseException, LexerError, ArithmeticError } = require(${JSON.stringify(entry)});`;
+    const result = await execFileAsync(process.execPath, [
+      `--input-type=${kind === "esm" ? "module" : "commonjs"}`,
+      "-e",
+      imports + exerciseParser,
+    ]);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
+  });
+
   it.each([
     "module",
     "commonjs",
@@ -98,6 +130,12 @@ describe("published parser subpath", () => {
         let thrown;
         try { parser.parse(input, options); } catch (error) { thrown = error; }
         if (!(thrown instanceof ErrorClass)) throw new Error('Wrong parser error');
+      }
+      let oversized;
+      try { parser.parse('#' + 'x'.repeat(1_000_000)); } catch (error) { oversized = error; }
+      if (!(oversized instanceof parser.ParseException) ||
+          oversized.message !== 'Parse error at 1:1: Input too large: 1000001 bytes exceeds limit of 1000000') {
+        throw new Error('Missing parser input limit');
       }
       parser.parse('echo hello | cat').statements[0].pipelines[0].commands
         .map(command => command.name.parts[0].value).join(',');
